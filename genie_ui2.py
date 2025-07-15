@@ -9,6 +9,8 @@ from typing import List, Dict
 import smtplib
 from email.message import EmailMessage
 from email_validator import validate_email, EmailNotValidError
+# Add import for admin list
+ADMIN_LIST_FILE = os.path.join(BASE_DIR, "genie_access_admin.json")
 
 # ----------------- CONFIG -----------------
 DATABRICKS_INSTANCE = "https://coindcx-dev.cloud.databricks.com"
@@ -211,6 +213,13 @@ def send_access_request_email(user_email, requested_spaces, all_spaces):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
+def load_admin_list():
+    if not os.path.exists(ADMIN_LIST_FILE):
+        with open(ADMIN_LIST_FILE, 'w') as f:
+            json.dump(["aryan.bhagat@coindcx.com"], f, indent=2)
+    with open(ADMIN_LIST_FILE, 'r') as f:
+        return json.load(f)
+
 # ----------------- STREAMLIT APP -----------------
 st.set_page_config(page_title="Databricks Genie UI", layout="centered")
 
@@ -263,6 +272,34 @@ if not st.user.is_logged_in:
 # Restrict access to @coindcx.com emails only
 if not (hasattr(st.user, "email") and st.user.email.lower().endswith("@coindcx.com")):
     st.error("Access restricted: Only @coindcx.com email addresses are allowed.")
+    st.stop()
+
+# --- ADMIN ACCESS CONTROL ---
+admin_list = load_admin_list()
+user_email = st.user.email.lower()
+if user_email not in admin_list:
+    # Show only the request access form and stop
+    spaces = load_spaces_config()
+    space_names = [s['name'] for s in spaces]
+    space_ids = [s['id'] for s in spaces]
+    st.title("🚦 Request Access to Genie Spaces")
+    st.markdown("You currently do not have access to Genie. Please request access below.")
+    with st.form("request_access_form"):
+        requested = st.multiselect("Select spaces to request access to:", options=space_ids, format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i))
+        submitted = st.form_submit_button("Request Access")
+    if submitted and requested:
+        requests_list = load_access_requests()
+        if not any(r['email']==user_email for r in requests_list):
+            requests_list.append({
+                "email": user_email,
+                "requested_spaces": requested,
+                "timestamp": time.time()
+            })
+            save_access_requests(requests_list)
+            send_access_request_email(user_email, requested, spaces)
+            st.success("Your access request has been submitted. You will be notified once access is granted.")
+        else:
+            st.info("You have already requested access. Please wait for approval.")
     st.stop()
 
 # Load spaces and access control
@@ -323,16 +360,22 @@ with st.sidebar:
     def space_option(i):
         name = space_names[i]
         if space_ids[i] not in user_access:
-            return f"{name} (No Access)"
+            return f"~~{name}~~ (No Access)"
         return name
+    selectable_indices = [i for i in range(len(space_ids)) if space_ids[i] in user_access]
+    disabled_indices = [i for i in range(len(space_ids)) if space_ids[i] not in user_access]
+    # Custom selectbox: only allow selection of accessible spaces, show others as strikethrough
     selected_space_idx = st.selectbox(
         "",
-        range(len(space_names)),
+        options=range(len(space_names)),
         format_func=space_option,
-        index=st.session_state['selected_space_idx'],
+        index=st.session_state['selected_space_idx'] if st.session_state['selected_space_idx'] in selectable_indices else (selectable_indices[0] if selectable_indices else 0),
         key="sidebar_space_selectbox",
-        disabled=[space_ids[i] not in user_access for i in range(len(space_ids))]
+        disabled=False
     )
+    if selected_space_idx not in selectable_indices:
+        st.warning("You do not have access to this space. Please select an accessible space.")
+        st.stop()
     st.session_state['selected_space_idx'] = selected_space_idx
     SPACE_ID = space_ids[selected_space_idx]
 
