@@ -66,7 +66,7 @@ if not st.session_state['logged_in']:
             st.session_state['logged_in'] = True
             st.session_state['username'] = username
             st.success("Login successful!")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Invalid username or password.")
     st.stop()
@@ -108,7 +108,7 @@ else:
             requests_list = [r for r in requests_list if r['email'] != email]
             save_access_requests(requests_list)
             st.success(f"Granted access to {email} for: {[space_dict.get(sid, sid) for sid in grant_spaces]}")
-            st.experimental_rerun()
+            st.rerun()
 
 st.header("Current User Access")
 for email, space_ids in access_control.items():
@@ -117,4 +117,4 @@ for email, space_ids in access_control.items():
 if st.button("Log out"):
     st.session_state['logged_in'] = False
     st.session_state['username'] = ''
-    st.experimental_rerun()  
+    st.rerun()  
