@@ -273,8 +273,8 @@ access_control = load_access_control()
 user_email = st.user.email.lower()
 user_access = access_control.get(user_email, [])
 
-# If user has no access, show request access form
-if not user_access:
+# Only allow users with granted access to at least one space
+if not user_access or not any(space_id in space_ids for space_id in user_access):
     st.title("🚦 Request Access to Genie Spaces")
     st.markdown("You currently do not have access to any Genie spaces. Please request access below.")
     with st.form("request_access_form"):
