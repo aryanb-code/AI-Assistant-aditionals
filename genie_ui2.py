@@ -7,11 +7,11 @@ import sqlparse
 import os
 from typing import List, Dict
 # Add import for admin list
-ADMIN_LIST_FILE = os.path.join(BASE_DIR, "genie_access_admin.json")
 
 # ----------------- CONFIG -----------------
 DATABRICKS_INSTANCE = "https://coindcx-dev.cloud.databricks.com"
 BASE_DIR = os.path.dirname(__file__)
+ADMIN_LIST_FILE = os.path.join(BASE_DIR, "genie_access_admin.json")
 SPACES_CONFIG_FILE = os.path.join(BASE_DIR, "genie_spaces.json")
 CHAT_HISTORY_FILE = os.path.join(BASE_DIR, "genie_chat_history.json")
 
