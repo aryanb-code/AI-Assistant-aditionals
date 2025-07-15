@@ -2,12 +2,13 @@ import streamlit as st
 import json
 import os
 import time
+import hashlib
 
 BASE_DIR = os.path.dirname(__file__)
 SPACES_CONFIG_FILE = os.path.join(BASE_DIR, "genie_spaces.json")
 ACCESS_CONTROL_FILE = os.path.join(BASE_DIR, "genie_access_control.json")
 ACCESS_REQUESTS_FILE = os.path.join(BASE_DIR, "genie_access_requests.json")
-ADMIN_EMAIL = "aryan.bhagat@coindcx.com"
+USERS_FILE = os.path.join(BASE_DIR, "users.json")
 
 def load_spaces_config():
     with open(SPACES_CONFIG_FILE, 'r') as f:
@@ -35,15 +36,42 @@ def save_access_requests(data):
     with open(ACCESS_REQUESTS_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
+def load_users():
+    with open(USERS_FILE, 'r') as f:
+        return json.load(f)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
 st.set_page_config(page_title="Genie Access Admin", layout="centered")
 
 st.title("🔑 Genie Access Admin Panel")
 
-# Only allow admin
-if not (hasattr(st.user, "email") and st.user.email.lower() == ADMIN_EMAIL):
-    st.error("Access restricted: Only admin can access this page.")
+# --- Login logic ---
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'username' not in st.session_state:
+    st.session_state['username'] = ''
+
+if not st.session_state['logged_in']:
+    st.subheader("Login Required")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+    if submit:
+        users = load_users()
+        user = next((u for u in users if u['username'] == username), None)
+        if user and user['password'] == hash_password(password):
+            st.session_state['logged_in'] = True
+            st.session_state['username'] = username
+            st.success("Login successful!")
+            st.experimental_rerun()
+        else:
+            st.error("Invalid username or password.")
     st.stop()
 
+# --- Main admin panel (after login) ---
 spaces = load_spaces_config()
 space_dict = {s['id']: s['name'] for s in spaces}
 
@@ -84,4 +112,9 @@ else:
 
 st.header("Current User Access")
 for email, space_ids in access_control.items():
-    st.markdown(f"**{email}**: {[space_dict.get(sid, sid) for sid in space_ids]}") 
+    st.markdown(f"**{email}**: {[space_dict.get(sid, sid) for sid in space_ids]}")
+
+if st.button("Log out"):
+    st.session_state['logged_in'] = False
+    st.session_state['username'] = ''
+    st.experimental_rerun()  
