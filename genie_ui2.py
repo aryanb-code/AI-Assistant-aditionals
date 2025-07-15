@@ -278,28 +278,41 @@ if not (hasattr(st.user, "email") and st.user.email.lower().endswith("@coindcx.c
 admin_list = load_admin_list()
 user_email = st.user.email.lower()
 if user_email not in admin_list:
-    # Show only the request access form and stop
     spaces = load_spaces_config()
     space_names = [s['name'] for s in spaces]
     space_ids = [s['id'] for s in spaces]
+    requests_list = load_access_requests()
+    user_request = next((r for r in requests_list if r['email'] == user_email), None)
+    already_requested = user_request['requested_spaces'] if user_request else []
     st.title("🚦 Request Access to Genie Spaces")
-    st.markdown("You currently do not have access to Genie. Please request access below.")
+    if already_requested:
+        st.info(f"You have already requested access to: {', '.join([next((s['name'] for s in spaces if s['id']==sid), sid) for sid in already_requested])}")
+    available_to_request = [sid for sid in space_ids if sid not in already_requested]
+    if not available_to_request:
+        st.success("You have already requested access to all available spaces. Please wait for approval.")
+        st.stop()
     with st.form("request_access_form"):
-        requested = st.multiselect("Select spaces to request access to:", options=space_ids, format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i))
+        requested = st.multiselect(
+            "Select additional spaces to request access to:",
+            options=available_to_request,
+            format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i)
+        )
         submitted = st.form_submit_button("Request Access")
     if submitted and requested:
-        requests_list = load_access_requests()
-        if not any(r['email']==user_email for r in requests_list):
+        if user_request:
+            # Update the user's request with new spaces
+            user_request['requested_spaces'].extend([sid for sid in requested if sid not in user_request['requested_spaces']])
+            user_request['timestamp'] = time.time()
+        else:
             requests_list.append({
                 "email": user_email,
                 "requested_spaces": requested,
                 "timestamp": time.time()
             })
-            save_access_requests(requests_list)
-            send_access_request_email(user_email, requested, spaces)
-            st.success("Your access request has been submitted. You will be notified once access is granted.")
-        else:
-            st.info("You have already requested access. Please wait for approval.")
+        save_access_requests(requests_list)
+        send_access_request_email(user_email, requested, spaces)
+        st.success("Your access request has been updated. You will be notified once access is granted.")
+        st.stop()
     st.stop()
 
 # Load spaces and access control
@@ -312,26 +325,41 @@ user_access = access_control.get(user_email, [])
 
 # Only allow users with granted access to at least one space
 if not user_access or not any(space_id in space_ids for space_id in user_access):
+    spaces = load_spaces_config()
+    space_names = [s['name'] for s in spaces]
+    space_ids = [s['id'] for s in spaces]
+    requests_list = load_access_requests()
+    user_request = next((r for r in requests_list if r['email'] == user_email), None)
+    already_requested = user_request['requested_spaces'] if user_request else []
     st.title("🚦 Request Access to Genie Spaces")
-    st.markdown("You currently do not have access to any Genie spaces. Please request access below.")
+    if already_requested:
+        st.info(f"You have already requested access to: {', '.join([next((s['name'] for s in spaces if s['id']==sid), sid) for sid in already_requested])}")
+    available_to_request = [sid for sid in space_ids if sid not in already_requested]
+    if not available_to_request:
+        st.success("You have already requested access to all available spaces. Please wait for approval.")
+        st.stop()
     with st.form("request_access_form"):
-        requested = st.multiselect("Select spaces to request access to:", options=space_ids, format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i))
+        requested = st.multiselect(
+            "Select additional spaces to request access to:",
+            options=available_to_request,
+            format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i)
+        )
         submitted = st.form_submit_button("Request Access")
     if submitted and requested:
-        # Save request
-        requests_list = load_access_requests()
-        # Prevent duplicate requests
-        if not any(r['email']==user_email for r in requests_list):
+        if user_request:
+            # Update the user's request with new spaces
+            user_request['requested_spaces'].extend([sid for sid in requested if sid not in user_request['requested_spaces']])
+            user_request['timestamp'] = time.time()
+        else:
             requests_list.append({
                 "email": user_email,
                 "requested_spaces": requested,
                 "timestamp": time.time()
             })
-            save_access_requests(requests_list)
-            send_access_request_email(user_email, requested, spaces)
-            st.success("Your access request has been submitted. You will be notified once access is granted.")
-        else:
-            st.info("You have already requested access. Please wait for approval.")
+        save_access_requests(requests_list)
+        send_access_request_email(user_email, requested, spaces)
+        st.success("Your access request has been updated. You will be notified once access is granted.")
+        st.stop()
     st.stop()
 
 # Main app (only shown after login and access)
