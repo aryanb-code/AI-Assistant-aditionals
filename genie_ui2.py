@@ -6,9 +6,6 @@ import pandas as pd
 import sqlparse
 import os
 from typing import List, Dict
-import smtplib
-from email.message import EmailMessage
-from email_validator import validate_email, EmailNotValidError
 # Add import for admin list
 ADMIN_LIST_FILE = os.path.join(BASE_DIR, "genie_access_admin.json")
 
@@ -191,28 +188,6 @@ def save_access_requests(data: list):
     with open(ACCESS_REQUESTS_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-def send_access_request_email(user_email, requested_spaces, all_spaces):
-    try:
-        msg = EmailMessage()
-        msg['Subject'] = f"[Genie Access Request] {user_email} requests access"
-        msg['From'] = user_email
-        msg['To'] = ADMIN_EMAIL
-        space_names = [s['name'] for s in all_spaces if s['id'] in requested_spaces]
-        msg.set_content(f"User {user_email} has requested access to the following Genie spaces:\n\n" + "\n".join(space_names))
-        # Try local sendmail first, fallback to Gmail SMTP if needed
-        try:
-            with smtplib.SMTP('localhost') as s:
-                s.send_message(msg)
-        except Exception:
-            # Fallback: Gmail SMTP (requires app password if 2FA enabled)
-            # Uncomment and set credentials if needed
-            # with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
-            #     s.login('your_gmail@gmail.com', 'your_app_password')
-            #     s.send_message(msg)
-            pass
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-
 def load_admin_list():
     if not os.path.exists(ADMIN_LIST_FILE):
         with open(ADMIN_LIST_FILE, 'w') as f:
@@ -331,7 +306,6 @@ if user_email not in admin_list:
                 "timestamp": time.time()
             })
         save_access_requests(requests_list)
-        send_access_request_email(user_email, requested, spaces)
         st.success("Your access request has been updated. You will be notified once access is granted.")
         st.stop()
     st.stop()
@@ -378,7 +352,6 @@ if not user_access or not any(space_id in space_ids for space_id in user_access)
                 "timestamp": time.time()
             })
         save_access_requests(requests_list)
-        send_access_request_email(user_email, requested, spaces)
         st.success("Your access request has been updated. You will be notified once access is granted.")
         st.stop()
     st.stop()
