@@ -274,6 +274,27 @@ if not (hasattr(st.user, "email") and st.user.email.lower().endswith("@coindcx.c
     st.error("Access restricted: Only @coindcx.com email addresses are allowed.")
     st.stop()
 
+# --- MY ACCESS SECTION (for all users) ---
+spaces = load_spaces_config()
+space_dict = {s['id']: s['name'] for s in spaces}
+user_email = st.user.email.lower()
+access_control = load_access_control()
+user_access = access_control.get(user_email, [])
+requests_list = load_access_requests()
+user_request = next((r for r in requests_list if r['email'] == user_email), None)
+requested_spaces = user_request['requested_spaces'] if user_request else []
+
+st.markdown("---")
+st.markdown("### 👤 My Access")
+if user_access:
+    st.success(f"You currently have access to: {', '.join([space_dict.get(sid, sid) for sid in user_access])}")
+else:
+    st.info("You do not have access to any spaces yet.")
+if requested_spaces:
+    not_granted = [sid for sid in requested_spaces if sid not in user_access]
+    if not_granted:
+        st.warning(f"You have requested access to: {', '.join([space_dict.get(sid, sid) for sid in not_granted])} (pending approval)")
+
 # --- ADMIN ACCESS CONTROL ---
 admin_list = load_admin_list()
 user_email = st.user.email.lower()
