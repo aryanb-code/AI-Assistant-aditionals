@@ -6,6 +6,9 @@ import pandas as pd
 import sqlparse
 import os
 from typing import List, Dict
+import smtplib
+from email.message import EmailMessage
+from email_validator import validate_email, EmailNotValidError
 
 # ----------------- CONFIG -----------------
 DATABRICKS_INSTANCE = "https://coindcx-dev.cloud.databricks.com"
@@ -159,6 +162,55 @@ def display_genie_message(message, space_id, token):
                 st.markdown("**📊 Query Result:**")
                 st.dataframe(df)
 
+# ----------------- ACCESS CONTROL -----------------
+ACCESS_CONTROL_FILE = os.path.join(BASE_DIR, "genie_access_control.json")
+ACCESS_REQUESTS_FILE = os.path.join(BASE_DIR, "genie_access_requests.json")
+ADMIN_EMAIL = "aryan.bhagat@coindcx.com"
+
+def load_access_control() -> dict:
+    if not os.path.exists(ACCESS_CONTROL_FILE):
+        with open(ACCESS_CONTROL_FILE, 'w') as f:
+            json.dump({}, f)
+    with open(ACCESS_CONTROL_FILE, 'r') as f:
+        return json.load(f)
+
+def save_access_control(data: dict):
+    with open(ACCESS_CONTROL_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def load_access_requests() -> list:
+    if not os.path.exists(ACCESS_REQUESTS_FILE):
+        with open(ACCESS_REQUESTS_FILE, 'w') as f:
+            json.dump([], f)
+    with open(ACCESS_REQUESTS_FILE, 'r') as f:
+        return json.load(f)
+
+def save_access_requests(data: list):
+    with open(ACCESS_REQUESTS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def send_access_request_email(user_email, requested_spaces, all_spaces):
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = f"[Genie Access Request] {user_email} requests access"
+        msg['From'] = user_email
+        msg['To'] = ADMIN_EMAIL
+        space_names = [s['name'] for s in all_spaces if s['id'] in requested_spaces]
+        msg.set_content(f"User {user_email} has requested access to the following Genie spaces:\n\n" + "\n".join(space_names))
+        # Try local sendmail first, fallback to Gmail SMTP if needed
+        try:
+            with smtplib.SMTP('localhost') as s:
+                s.send_message(msg)
+        except Exception:
+            # Fallback: Gmail SMTP (requires app password if 2FA enabled)
+            # Uncomment and set credentials if needed
+            # with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+            #     s.login('your_gmail@gmail.com', 'your_app_password')
+            #     s.send_message(msg)
+            pass
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
 # ----------------- STREAMLIT APP -----------------
 st.set_page_config(page_title="Databricks Genie UI", layout="centered")
 
@@ -213,7 +265,39 @@ if not (hasattr(st.user, "email") and st.user.email.lower().endswith("@coindcx.c
     st.error("Access restricted: Only @coindcx.com email addresses are allowed.")
     st.stop()
 
-# Main app (only shown after login)
+# Load spaces and access control
+spaces = load_spaces_config()
+space_names = [s['name'] for s in spaces]
+space_ids = [s['id'] for s in spaces]
+access_control = load_access_control()
+user_email = st.user.email.lower()
+user_access = access_control.get(user_email, [])
+
+# If user has no access, show request access form
+if not user_access:
+    st.title("🚦 Request Access to Genie Spaces")
+    st.markdown("You currently do not have access to any Genie spaces. Please request access below.")
+    with st.form("request_access_form"):
+        requested = st.multiselect("Select spaces to request access to:", options=space_ids, format_func=lambda i: next((s['name'] for s in spaces if s['id']==i), i))
+        submitted = st.form_submit_button("Request Access")
+    if submitted and requested:
+        # Save request
+        requests_list = load_access_requests()
+        # Prevent duplicate requests
+        if not any(r['email']==user_email for r in requests_list):
+            requests_list.append({
+                "email": user_email,
+                "requested_spaces": requested,
+                "timestamp": time.time()
+            })
+            save_access_requests(requests_list)
+            send_access_request_email(user_email, requested, spaces)
+            st.success("Your access request has been submitted. You will be notified once access is granted.")
+        else:
+            st.info("You have already requested access. Please wait for approval.")
+    st.stop()
+
+# Main app (only shown after login and access)
 st.title("🤖 Databricks Genie Chat")
 
 # Welcome message with user info
@@ -230,22 +314,24 @@ st.markdown(f"### Welcome, **{st.user.name}**! 👋")
 # Get Databricks token
 token = get_pat_token()
 
-# Load spaces
-spaces = load_spaces_config()
-space_names = [s['name'] for s in spaces]
-space_ids = [s['id'] for s in spaces]
-
 # Sidebar: Select Genie Space, Chat History, Logout at bottom
 with st.sidebar:
     st.markdown("### Select Genie Space:")
     if 'selected_space_idx' not in st.session_state:
         st.session_state['selected_space_idx'] = 0
+    # Only enable spaces user has access to, gray out others
+    def space_option(i):
+        name = space_names[i]
+        if space_ids[i] not in user_access:
+            return f"{name} (No Access)"
+        return name
     selected_space_idx = st.selectbox(
         "",
         range(len(space_names)),
-        format_func=lambda i: space_names[i],
+        format_func=space_option,
         index=st.session_state['selected_space_idx'],
-        key="sidebar_space_selectbox"
+        key="sidebar_space_selectbox",
+        disabled=[space_ids[i] not in user_access for i in range(len(space_ids))]
     )
     st.session_state['selected_space_idx'] = selected_space_idx
     SPACE_ID = space_ids[selected_space_idx]
